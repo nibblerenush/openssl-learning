@@ -254,7 +254,7 @@ int main()
   
   //GenerateRsaAndWritePem();
   
-  /* in: openssl rsautl -encrypt -inkey ./public_key.pem -pubin -out encrypted_text.bin
+  /* in: openssl pkeyutl -encrypt -inkey ./public_key.pem -pubin -out encrypted_text.bin
    * out: ReadPemAndDecryptMessage() */
   //ReadPemAndDecryptMessage();
   
