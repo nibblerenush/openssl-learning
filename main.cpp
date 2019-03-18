@@ -193,7 +193,7 @@ void GetSignature(std::unique_ptr<unsigned char[]> & signatureText, std::size_t 
   GetFileData(signatureText, signatureSize, "signature.bin");
 }
 
-void VerifyMessage()
+void ReadPemAndVerifyMessage()
 {
   try
   {
@@ -254,11 +254,13 @@ int main()
   
   //GenerateRsaAndWritePem();
   
-  //openssl rsautl -encrypt -inkey ./public_key.pem -pubin -out encrypted_text.bin
+  /* in: openssl rsautl -encrypt -inkey ./public_key.pem -pubin -out encrypted_text.bin
+   * out: ReadPemAndDecryptMessage() */
   //ReadPemAndDecryptMessage();
   
-  //openssl dgst -sha256 -sign ./private_key.pem -out signature.bin ./message.txt
-  VerifyMessage();
+  /* in: openssl dgst -sha256 -sign ./private_key.pem -out signature.bin ./message.txt
+   * out: ReadPemAndVerifyMessage() */
+  ReadPemAndVerifyMessage();
   
   ERR_free_strings();
   EVP_cleanup();
