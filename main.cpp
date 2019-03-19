@@ -1,16 +1,29 @@
+#include <cerrno>
 #include <cstdlib>
+#include <cstring>
 #include <iostream>
 #include <memory>
 #include <sstream>
 #include <stdexcept>
 
-#include <errno.h>
-#include <string.h>
-
+#include <openssl/bio.h>
+#include <openssl/crypto.h>
 #include <openssl/err.h>
 #include <openssl/evp.h>
 #include <openssl/pem.h>
 #include <openssl/rsa.h>
+
+std::string GetSslInfo()
+{
+  std::ostringstream ostringstream;
+  ostringstream
+    << SSLeay_version(SSLEAY_VERSION) << '\n'
+    << SSLeay_version(SSLEAY_CFLAGS) << '\n'
+    << SSLeay_version(SSLEAY_BUILT_ON) << '\n'
+    << SSLeay_version(SSLEAY_PLATFORM) << '\n'
+    << SSLeay_version(SSLEAY_DIR )<< '\n';
+  return ostringstream.str();
+}
 
 std::string GetSslErrorString()
 {
@@ -23,10 +36,10 @@ std::string GetSslErrorString()
   return ostringstream.str();
 }
 
-std::string GetLinuxErrorString()
+std::string GetOsErrorString()
 {
   std::ostringstream ostringstream;
-  ostringstream << strerror(errno);
+  ostringstream << std::strerror(errno);
   return ostringstream.str();
 }
 
@@ -35,27 +48,27 @@ void GetFileData(std::unique_ptr<unsigned char[]> & data, std::size_t & size, co
   std::unique_ptr<std::FILE, decltype(&std::fclose)> file(std::fopen(fileName, "rb"), &std::fclose);
   if (!file)
   {
-    throw std::runtime_error(GetLinuxErrorString());
+    throw std::runtime_error(GetOsErrorString());
   }
   
   if (std::fseek(file.get(), 0, SEEK_END) == -1)
   {
-    throw std::runtime_error(GetLinuxErrorString());
+    throw std::runtime_error(GetOsErrorString());
   }
   size = std::ftell(file.get());
   if (size == -1)
   {
-    throw std::runtime_error(GetLinuxErrorString());
+    throw std::runtime_error(GetOsErrorString());
   }
   if (std::fseek(file.get(), 0, SEEK_SET) == -1)
   {
-    throw std::runtime_error(GetLinuxErrorString());
+    throw std::runtime_error(GetOsErrorString());
   }
   
   data = std::unique_ptr<unsigned char[]>(new unsigned char [size]);
   if (std::fread( data.get(), size, 1, file.get()) == 0)
   {
-    throw std::runtime_error(GetLinuxErrorString());
+    throw std::runtime_error(GetOsErrorString());
   }
 }
 
@@ -100,7 +113,7 @@ void GenerateRsaAndWritePem()
     std::unique_ptr<std::FILE, decltype(&std::fclose)> pemFilePublicKey(fopen("public_key.pem", "wb"), &std::fclose);
     if (!pemFilePublicKey)
     {
-      throw std::runtime_error(GetLinuxErrorString());
+      throw std::runtime_error(GetOsErrorString());
     }
     if (!PEM_write_PUBKEY(pemFilePublicKey.get(), pkey.get()))
     {
@@ -110,7 +123,7 @@ void GenerateRsaAndWritePem()
     std::unique_ptr<std::FILE, decltype(&std::fclose)> pemFilePrivateKey(fopen("private_key.pem", "wb"), &std::fclose);
     if (!pemFilePrivateKey)
     {
-      throw std::runtime_error(GetLinuxErrorString());
+      throw std::runtime_error(GetOsErrorString());
     }
     if (!PEM_write_PrivateKey(pemFilePrivateKey.get(), pkey.get(), nullptr, nullptr, 0, nullptr, nullptr))
     {
@@ -135,7 +148,7 @@ void ReadPemAndDecryptMessage()
     std::unique_ptr<std::FILE, decltype(&std::fclose)> pemFilePrivateKey(std::fopen("private_key.pem", "rb"), &std::fclose);
     if (!pemFilePrivateKey)
     {
-      throw std::runtime_error(GetLinuxErrorString());
+      throw std::runtime_error(GetOsErrorString());
     }
     EVP_PKEY * rawPkey;
     if (!PEM_read_PrivateKey(pemFilePrivateKey.get(), &rawPkey, nullptr, nullptr))
@@ -206,7 +219,7 @@ void ReadPemAndVerifyMessage()
     std::unique_ptr<std::FILE, decltype(&std::fclose)> pemFilePublicKey(std::fopen("public_key.pem", "rb"), &std::fclose);
     if (!pemFilePublicKey)
     {
-      throw std::runtime_error(GetLinuxErrorString());
+      throw std::runtime_error(GetOsErrorString());
     }
     EVP_PKEY * rawPkey;
     if (!PEM_read_PUBKEY(pemFilePublicKey.get(), &rawPkey, nullptr, nullptr))
@@ -214,6 +227,10 @@ void ReadPemAndVerifyMessage()
       throw std::runtime_error(GetSslErrorString());
     }
     std::unique_ptr<EVP_PKEY, decltype(&EVP_PKEY_free)> pkey(rawPkey, &EVP_PKEY_free);
+    if (EVP_PKEY_type(pkey->type) == EVP_PKEY_RSA)
+    {
+      std::cout << "This is RSA" << std::endl;
+    }
     
     if (EVP_DigestVerifyInit(mdContext.get(), nullptr, EVP_sha256(), nullptr, pkey.get()) <= 0)
     {
@@ -246,21 +263,105 @@ void ReadPemAndVerifyMessage()
   }
 }
 
-int main()
+void GetSignatureWithoutDigest(std::unique_ptr<unsigned char[]> & signatureText, std::size_t & signatureSize)
 {
+  GetFileData(signatureText, signatureSize, "rsautl_signature.bin");
+}
+
+void ReadPemAndVerifyMessageWithoutDigest()
+{
+  try
+  {
+    BIO * pemFilePublicKey = BIO_new_file("public_key.pem", "rb");
+    if (!pemFilePublicKey)
+    {
+      throw std::runtime_error(GetSslErrorString());
+    }
+    
+    EVP_PKEY * rawPkey;
+    EVP_PKEY * returnPkey = PEM_read_bio_PUBKEY(pemFilePublicKey, &rawPkey, nullptr, nullptr);
+    if (!returnPkey)
+    {
+      throw std::runtime_error(GetSslErrorString());      
+    }
+    if (EVP_PKEY_type(rawPkey->type) == EVP_PKEY_RSA)
+    {
+      std::cout << "This is RSA" << std::endl;
+    }
+    
+    std::size_t messageSize;
+    std::unique_ptr<unsigned char[]> messageText;
+    GetVerifyingMessage(messageText, messageSize);
+    
+    std::size_t signatureSize;
+    std::unique_ptr<unsigned char[]> signatureText;
+    GetSignatureWithoutDigest(signatureText, signatureSize);
+    
+    std::unique_ptr<EVP_PKEY_CTX, decltype(&EVP_PKEY_CTX_free)> pkeyContext(EVP_PKEY_CTX_new(rawPkey, nullptr), &EVP_PKEY_CTX_free);
+    if (!pkeyContext)
+    {
+      throw std::runtime_error(GetSslErrorString());
+    }
+    
+    if (EVP_PKEY_verify_init(pkeyContext.get()) <= 0)
+    {
+      throw std::runtime_error(GetSslErrorString());
+    }
+    
+    if (EVP_PKEY_verify(pkeyContext.get(), signatureText.get(), signatureSize, messageText.get(), messageSize))
+    {
+      std::cout << "Verifying SUCCESS" << std::endl;
+    }
+    else
+    {
+      std::cout << "Verifying FAILURE" << std::endl;
+    }
+    
+    EVP_PKEY_free(rawPkey);
+    BIO_free_all(pemFilePublicKey);
+  }
+  catch (std::runtime_error ex)
+  {
+    std::cerr << ex.what() << std::endl;
+  }
+}
+
+int main(int argc, char ** argv)
+{
+  if (argc != 2)
+  {
+    std::cerr << "Usage: openssl-learning [operation]" << std::endl;
+    return EXIT_FAILURE;
+  }
+  
+  std::cout << GetSslInfo() << std::endl;
   std::cout << "openssl_learning: start" << std::endl;
   OpenSSL_add_all_algorithms();
   ERR_load_crypto_strings();
   
-  //GenerateRsaAndWritePem();
-  
-  /* in: openssl pkeyutl -encrypt -inkey ./public_key.pem -pubin -out encrypted_text.bin
-   * out: ReadPemAndDecryptMessage() */
-  //ReadPemAndDecryptMessage();
-  
-  /* in: openssl dgst -sha256 -sign ./private_key.pem -out signature.bin ./message.txt
-   * out: ReadPemAndVerifyMessage() */
-  ReadPemAndVerifyMessage();
+  int operation = std::atoi(argv[1]);
+  switch (operation)
+  {
+    case 1:
+      GenerateRsaAndWritePem();
+      /* out: */
+      break;
+    case 2:
+      /* in: openssl pkeyutl -encrypt -inkey ./public_key.pem -pubin -out ./encrypted_text.bin
+       * out: */
+      ReadPemAndDecryptMessage();
+      break;
+    case 3:
+      /* in: openssl dgst -sha256 -sign ./private_key.pem -out ./signature.bin ./message.txt
+       * out: */
+      ReadPemAndVerifyMessage();
+      break;
+    case 4:
+      /* in: openssl rsautl -sign -inkey ./private_key.pem -in ./message.txt -out ./rsautl_signature.bin
+       * out: */
+      ReadPemAndVerifyMessageWithoutDigest();
+      break;
+  }
   
   ERR_free_strings();
   EVP_cleanup();

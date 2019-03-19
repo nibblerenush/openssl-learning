@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.0)
 
-project(openssl_learning)
+project(openssl-learning)
 
 find_package(OpenSSL REQUIRED)
 
