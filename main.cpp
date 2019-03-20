@@ -11,7 +11,10 @@
 #include <openssl/err.h>
 #include <openssl/evp.h>
 #include <openssl/pem.h>
+#include <openssl/pkcs12.h>
 #include <openssl/rsa.h>
+ #include <openssl/safestack.h>
+#include <openssl/x509.h>
 
 std::string GetSslInfo()
 {
@@ -170,13 +173,12 @@ void ReadPemAndDecryptMessage()
     {
       throw std::runtime_error(GetOsErrorString());
     }
-    EVP_PKEY * rawPkey;
-    if (!PEM_read_PrivateKey(pemFilePrivateKey.get(), &rawPkey, nullptr, nullptr))
+    
+    std::unique_ptr<EVP_PKEY, decltype(&EVP_PKEY_free)> pkey(PEM_read_PrivateKey(pemFilePrivateKey.get(), nullptr, nullptr, nullptr), &EVP_PKEY_free);
+    if (!pkey)
     {
       throw std::runtime_error(GetSslErrorString());
     }
-    std::unique_ptr<EVP_PKEY, decltype(&EVP_PKEY_free)> pkey(rawPkey, &EVP_PKEY_free);
-    
     if (EVP_PKEY_type(pkey->type) == EVP_PKEY_RSA)
     {
       std::cout << "This is RSA" << std::endl;
@@ -230,26 +232,26 @@ void ReadPemAndVerifyMessage()
 {
   try
   {
-    std::unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_destroy)> mdContext(EVP_MD_CTX_create(), &EVP_MD_CTX_destroy);
-    if (!mdContext)
-    {
-      throw std::runtime_error(GetSslErrorString());
-    }
-    
     std::unique_ptr<std::FILE, decltype(&std::fclose)> pemFilePublicKey(std::fopen("public_key.pem", "rb"), &std::fclose);
     if (!pemFilePublicKey)
     {
       throw std::runtime_error(GetOsErrorString());
     }
-    EVP_PKEY * rawPkey;
-    if (!PEM_read_PUBKEY(pemFilePublicKey.get(), &rawPkey, nullptr, nullptr))
+    
+    std::unique_ptr<EVP_PKEY, decltype(&EVP_PKEY_free)> pkey(PEM_read_PUBKEY(pemFilePublicKey.get(), nullptr, nullptr, nullptr), &EVP_PKEY_free);
+    if (!pkey)
     {
       throw std::runtime_error(GetSslErrorString());
     }
-    std::unique_ptr<EVP_PKEY, decltype(&EVP_PKEY_free)> pkey(rawPkey, &EVP_PKEY_free);
     if (EVP_PKEY_type(pkey->type) == EVP_PKEY_RSA)
     {
       std::cout << "This is RSA" << std::endl;
+    }
+    
+    std::unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_destroy)> mdContext(EVP_MD_CTX_create(), &EVP_MD_CTX_destroy);
+    if (!mdContext)
+    {
+      throw std::runtime_error(GetSslErrorString());
     }
     
     if (EVP_DigestVerifyInit(mdContext.get(), nullptr, EVP_sha256(), nullptr, pkey.get()) <= 0)
@@ -292,19 +294,18 @@ void ReadPemAndVerifyMessageWithoutDigest()
 {
   try
   {
-    BIO * pemFilePublicKey = BIO_new_file("public_key.pem", "rb");
+    std::unique_ptr<BIO, decltype(&BIO_free_all)> pemFilePublicKey(BIO_new_file("public_key.pem", "rb"), &BIO_free_all);
     if (!pemFilePublicKey)
     {
       throw std::runtime_error(GetSslErrorString());
     }
     
-    EVP_PKEY * rawPkey;
-    EVP_PKEY * returnPkey = PEM_read_bio_PUBKEY(pemFilePublicKey, &rawPkey, nullptr, nullptr);
-    if (!returnPkey)
+    std::unique_ptr<EVP_PKEY, decltype(&EVP_PKEY_free)> pkey(PEM_read_bio_PUBKEY(pemFilePublicKey.get(), nullptr, nullptr, nullptr), &EVP_PKEY_free);
+    if (!pkey)
     {
       throw std::runtime_error(GetSslErrorString());      
     }
-    if (EVP_PKEY_type(rawPkey->type) == EVP_PKEY_RSA)
+    if (EVP_PKEY_type(pkey->type) == EVP_PKEY_RSA)
     {
       std::cout << "This is RSA" << std::endl;
     }
@@ -317,7 +318,7 @@ void ReadPemAndVerifyMessageWithoutDigest()
     std::unique_ptr<unsigned char[]> signatureText;
     GetSignatureWithoutDigest(signatureText, signatureSize);
     
-    std::unique_ptr<EVP_PKEY_CTX, decltype(&EVP_PKEY_CTX_free)> pkeyContext(EVP_PKEY_CTX_new(rawPkey, nullptr), &EVP_PKEY_CTX_free);
+    std::unique_ptr<EVP_PKEY_CTX, decltype(&EVP_PKEY_CTX_free)> pkeyContext(EVP_PKEY_CTX_new(pkey.get(), nullptr), &EVP_PKEY_CTX_free);
     if (!pkeyContext)
     {
       throw std::runtime_error(GetSslErrorString());
@@ -336,9 +337,102 @@ void ReadPemAndVerifyMessageWithoutDigest()
     {
       std::cout << "Verifying FAILURE" << std::endl;
     }
+  }
+  catch (std::runtime_error ex)
+  {
+    std::cerr << ex.what() << std::endl;
+  }
+}
+
+void GetSerialNumber(X509 * x509Certificate, std::unique_ptr<char, decltype(&CRYPTO_free)> & serialNumber)
+{
+  ASN1_INTEGER * asn1Integer = X509_get_serialNumber(x509Certificate);
+  if (!asn1Integer)
+  {
+    throw std::runtime_error(GetSslErrorString());
+  }
+  
+  std::unique_ptr<BIGNUM, decltype(&BN_free)> bignum(ASN1_INTEGER_to_BN(asn1Integer, nullptr), &BN_free);
+  if (!bignum)
+  {
+    throw std::runtime_error(GetSslErrorString());
+  }
+  
+  serialNumber.reset(BN_bn2hex(bignum.get()));
+  if (!serialNumber)
+  {
+    throw std::runtime_error(GetSslErrorString());
+  }
+}
+
+void ReadCertificateAndReadPkcs12()
+{
+  try
+  {
+    std::unique_ptr<BIO, decltype(&BIO_free_all)> pemFileCertificate(BIO_new_file("ia.crt", "rb"), &BIO_free_all);
+    if (!pemFileCertificate)
+    {
+      throw std::runtime_error(GetSslErrorString());
+    }
     
-    EVP_PKEY_free(rawPkey);
-    BIO_free_all(pemFilePublicKey);
+    std::unique_ptr<X509, decltype(&X509_free)> x509Certificate(PEM_read_bio_X509(pemFileCertificate.get(), nullptr, nullptr, nullptr), &X509_free);
+    if (!x509Certificate)
+    {
+      throw std::runtime_error(GetSslErrorString());
+    }
+    
+    std::size_t issuerSize = 512;
+    std::unique_ptr<char[]> issuer = std::unique_ptr<char[]>(new char [issuerSize]);
+    if (!X509_NAME_oneline(X509_get_issuer_name(x509Certificate.get()), issuer.get(), issuerSize))
+    {
+      throw std::runtime_error(GetSslErrorString());
+    }
+    
+    std::size_t subjectSize = 512;
+    std::unique_ptr<char[]> subject = std::unique_ptr<char[]>(new char [subjectSize]);
+    if (!X509_NAME_oneline(X509_get_subject_name(x509Certificate.get()), subject.get(), subjectSize))
+    {
+      throw std::runtime_error(GetSslErrorString());
+    }
+    
+    std::cout
+      << "Issuer: " << issuer.get() << '\n'
+      << "Subject: " << subject.get() << std::endl;
+    
+    std::unique_ptr<BIO, decltype(&BIO_free_all)> pemFilePkcs12(BIO_new_file("ia.p12", "rb"), &BIO_free_all);
+    if (!pemFilePkcs12)
+    {
+      throw std::runtime_error(GetSslErrorString());
+    }
+    
+    std::unique_ptr<PKCS12, decltype(&PKCS12_free)> pkcs12(d2i_PKCS12_bio(pemFilePkcs12.get(), nullptr), &PKCS12_free);
+    if (!pkcs12)
+    {
+      throw std::runtime_error(GetSslErrorString());
+    }
+    
+    EVP_PKEY * rawPkey;
+    X509 * rawX509Main;
+    STACK_OF(X509) * x509Stack = nullptr;
+    
+    if (!PKCS12_parse(pkcs12.get(), nullptr, &rawPkey, &rawX509Main, &x509Stack))
+    {
+      throw std::runtime_error(GetSslErrorString());
+    }
+    std::unique_ptr<EVP_PKEY, decltype(&EVP_PKEY_free)> pkey(rawPkey, &EVP_PKEY_free);
+    
+    std::unique_ptr<X509, decltype(&X509_free)> x509Main(rawX509Main, &X509_free);
+    std::unique_ptr<X509, decltype(&X509_free)> x509Second(sk_X509_pop(x509Stack), &X509_free);
+    
+    std::unique_ptr<char, decltype(&CRYPTO_free)> serialNumberMain(nullptr, &CRYPTO_free);
+    GetSerialNumber(x509Main.get(), serialNumberMain);
+    std::cout << "Main serial number: " << serialNumberMain.get() << std::endl;
+    
+    std::unique_ptr<char, decltype(&CRYPTO_free)> serialNumberSecond(nullptr, &CRYPTO_free);
+    GetSerialNumber(x509Second.get(), serialNumberSecond);
+    std::cout << "Second serial number: " << serialNumberSecond.get() << std::endl;
+    
+    sk_X509_pop_free(x509Stack, X509_free);
   }
   catch (std::runtime_error ex)
   {
@@ -382,6 +476,17 @@ int main(int argc, char ** argv)
        * out: */
       ReadPemAndVerifyMessageWithoutDigest();
       break;
+    case 5:
+      /* in: openssl req -new -x509 -days 3650 -key ./rsa_private_key.pem -out ./ca.crt
+       * in: openssl genpkey -algorithm rsa -out ./ia_private_key.pem 1024
+       * in: openssl req -new -key ./ia_private_key.pem -out ./ia.csr
+       * in: openssl x509 -req -days 3650 -in ./ia.csr -CA ./ca.crt -CAkey ./rsa_private_key.pem -set_serial 01 -out ./ia.crt
+       * in: openssl pkcs12 -export -out ./ia.p12 -inkey ./ia_private_key.pem -in ./ia.crt -chain -CAfile ./ca.crt
+       * out: */
+      ReadCertificateAndReadPkcs12();
+      break;
+    default:
+      std::cerr << "Invalid operation!" << std::endl;
   }
   
   ERR_free_strings();
