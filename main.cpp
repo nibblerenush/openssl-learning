@@ -120,12 +120,32 @@ void GenerateRsaAndWritePem()
       throw std::runtime_error(GetSslErrorString());
     }
     
+    std::unique_ptr<std::FILE, decltype(&std::fclose)> pemFileRsaPublicKey(fopen("rsa_public_key.pem", "wb"), &std::fclose);
+    if (!pemFileRsaPublicKey)
+    {
+      throw std::runtime_error(GetOsErrorString());
+    }
+    if (!PEM_write_RSA_PUBKEY(pemFileRsaPublicKey.get(), rsa))
+    {
+      throw std::runtime_error(GetOsErrorString());
+    }
+    
     std::unique_ptr<std::FILE, decltype(&std::fclose)> pemFilePrivateKey(fopen("private_key.pem", "wb"), &std::fclose);
     if (!pemFilePrivateKey)
     {
       throw std::runtime_error(GetOsErrorString());
     }
     if (!PEM_write_PrivateKey(pemFilePrivateKey.get(), pkey.get(), nullptr, nullptr, 0, nullptr, nullptr))
+    {
+      throw std::runtime_error(GetSslErrorString());
+    }
+    
+    std::unique_ptr<std::FILE, decltype(&std::fclose)> pemFileRsaPrivateKey(fopen("rsa_private_key.pem", "wb"), &std::fclose);
+    if (!pemFileRsaPrivateKey)
+    {
+      throw std::runtime_error(GetOsErrorString());
+    }
+    if (!PEM_write_RSAPrivateKey(pemFileRsaPrivateKey.get(), rsa, nullptr, nullptr, 0, nullptr, nullptr))
     {
       throw std::runtime_error(GetSslErrorString());
     }
@@ -343,8 +363,9 @@ int main(int argc, char ** argv)
   switch (operation)
   {
     case 1:
+      /* in:
+       * out: */
       GenerateRsaAndWritePem();
-      /* out: */
       break;
     case 2:
       /* in: openssl pkeyutl -encrypt -inkey ./public_key.pem -pubin -out ./encrypted_text.bin
