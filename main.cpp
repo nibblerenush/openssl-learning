@@ -13,7 +13,6 @@
 #include <openssl/pem.h>
 #include <openssl/pkcs12.h>
 #include <openssl/rsa.h>
- #include <openssl/safestack.h>
 #include <openssl/x509.h>
 
 std::string GetSslInfo()
@@ -46,7 +45,7 @@ std::string GetOsErrorString()
   return ostringstream.str();
 }
 
-void GetFileData(std::unique_ptr<unsigned char[]> & data, std::size_t & size, const char * fileName)
+void GetFileData(std::unique_ptr<unsigned char []> & data, std::size_t & size, const char * fileName)
 {
   std::unique_ptr<std::FILE, decltype(&std::fclose)> file(std::fopen(fileName, "rb"), &std::fclose);
   if (!file)
@@ -68,8 +67,8 @@ void GetFileData(std::unique_ptr<unsigned char[]> & data, std::size_t & size, co
     throw std::runtime_error(GetOsErrorString());
   }
   
-  data = std::unique_ptr<unsigned char[]>(new unsigned char [size]);
-  if (std::fread( data.get(), size, 1, file.get()) == 0)
+  data = std::unique_ptr<unsigned char []>(new unsigned char [size]);
+  if (std::fread(data.get(), size, 1, file.get()) == 0)
   {
     throw std::runtime_error(GetOsErrorString());
   }
@@ -159,7 +158,7 @@ void GenerateRsaAndWritePem()
   }
 }
 
-void GetEncryptedText(std::unique_ptr<unsigned char[]> & inText, std::size_t & inSize)
+void GetEncryptedText(std::unique_ptr<unsigned char []> & inText, std::size_t & inSize)
 {
   GetFileData(inText, inSize, "encrypted_text.bin");
 }
@@ -185,7 +184,7 @@ void ReadPemAndDecryptMessage()
     }
     
     std::size_t inSize;
-    std::unique_ptr<unsigned char[]> inText;
+    std::unique_ptr<unsigned char []> inText;
     GetEncryptedText(inText, inSize);
     
     std::unique_ptr<EVP_PKEY_CTX, decltype(&EVP_PKEY_CTX_free)> pkeyContext(EVP_PKEY_CTX_new(pkey.get(), nullptr), &EVP_PKEY_CTX_free);
@@ -204,7 +203,7 @@ void ReadPemAndDecryptMessage()
       throw std::runtime_error(GetSslErrorString());
     }
     
-    std::unique_ptr<unsigned char[]> outText(new unsigned char [outSize]);
+    std::unique_ptr<unsigned char []> outText(new unsigned char [outSize]);
     if (EVP_PKEY_decrypt(pkeyContext.get(), outText.get(), &outSize, inText.get(), inSize) <= 0)
     {
       throw std::runtime_error(GetSslErrorString());
@@ -218,12 +217,12 @@ void ReadPemAndDecryptMessage()
   }
 }
 
-void GetVerifyingMessage(std::unique_ptr<unsigned char[]> & messageText, std::size_t & messageSize)
+void GetVerifyingMessage(std::unique_ptr<unsigned char []> & messageText, std::size_t & messageSize)
 {
   GetFileData(messageText, messageSize, "message.txt");
 }
 
-void GetSignature(std::unique_ptr<unsigned char[]> & signatureText, std::size_t & signatureSize)
+void GetSignature(std::unique_ptr<unsigned char []> & signatureText, std::size_t & signatureSize)
 {
   GetFileData(signatureText, signatureSize, "signature.bin");
 }
@@ -260,7 +259,7 @@ void ReadPemAndVerifyMessage()
     }
     
     std::size_t messageSize;
-    std::unique_ptr<unsigned char[]> messageText;
+    std::unique_ptr<unsigned char []> messageText;
     GetVerifyingMessage(messageText, messageSize);
     if (EVP_DigestVerifyUpdate(mdContext.get(), messageText.get(), messageSize) <= 0)
     {
@@ -268,7 +267,7 @@ void ReadPemAndVerifyMessage()
     }
     
     std::size_t signatureSize;
-    std::unique_ptr<unsigned char[]> signatureText;
+    std::unique_ptr<unsigned char []> signatureText;
     GetSignature(signatureText, signatureSize);
     if (EVP_DigestVerifyFinal(mdContext.get(), signatureText.get(), signatureSize))
     {
@@ -285,7 +284,7 @@ void ReadPemAndVerifyMessage()
   }
 }
 
-void GetSignatureWithoutDigest(std::unique_ptr<unsigned char[]> & signatureText, std::size_t & signatureSize)
+void GetSignatureWithoutDigest(std::unique_ptr<unsigned char []> & signatureText, std::size_t & signatureSize)
 {
   GetFileData(signatureText, signatureSize, "rsautl_signature.bin");
 }
@@ -311,11 +310,11 @@ void ReadPemAndVerifyMessageWithoutDigest()
     }
     
     std::size_t messageSize;
-    std::unique_ptr<unsigned char[]> messageText;
+    std::unique_ptr<unsigned char []> messageText;
     GetVerifyingMessage(messageText, messageSize);
     
     std::size_t signatureSize;
-    std::unique_ptr<unsigned char[]> signatureText;
+    std::unique_ptr<unsigned char []> signatureText;
     GetSignatureWithoutDigest(signatureText, signatureSize);
     
     std::unique_ptr<EVP_PKEY_CTX, decltype(&EVP_PKEY_CTX_free)> pkeyContext(EVP_PKEY_CTX_new(pkey.get(), nullptr), &EVP_PKEY_CTX_free);
@@ -382,14 +381,14 @@ void ReadCertificateAndReadPkcs12()
     }
     
     std::size_t issuerSize = 512;
-    std::unique_ptr<char[]> issuer = std::unique_ptr<char[]>(new char [issuerSize]);
+    std::unique_ptr<char []> issuer = std::unique_ptr<char []>(new char [issuerSize]);
     if (!X509_NAME_oneline(X509_get_issuer_name(x509Certificate.get()), issuer.get(), issuerSize))
     {
       throw std::runtime_error(GetSslErrorString());
     }
     
     std::size_t subjectSize = 512;
-    std::unique_ptr<char[]> subject = std::unique_ptr<char[]>(new char [subjectSize]);
+    std::unique_ptr<char []> subject = std::unique_ptr<char []>(new char [subjectSize]);
     if (!X509_NAME_oneline(X509_get_subject_name(x509Certificate.get()), subject.get(), subjectSize))
     {
       throw std::runtime_error(GetSslErrorString());
@@ -411,16 +410,16 @@ void ReadCertificateAndReadPkcs12()
       throw std::runtime_error(GetSslErrorString());
     }
     
-    EVP_PKEY * rawPkey;
-    X509 * rawX509Main;
+    EVP_PKEY * rawPkey = nullptr;
+    X509 * rawX509Main = nullptr;
     STACK_OF(X509) * x509Stack = nullptr;
     
     if (!PKCS12_parse(pkcs12.get(), nullptr, &rawPkey, &rawX509Main, &x509Stack))
     {
       throw std::runtime_error(GetSslErrorString());
     }
-    std::unique_ptr<EVP_PKEY, decltype(&EVP_PKEY_free)> pkey(rawPkey, &EVP_PKEY_free);
     
+    std::unique_ptr<EVP_PKEY, decltype(&EVP_PKEY_free)> pkey(rawPkey, &EVP_PKEY_free);
     std::unique_ptr<X509, decltype(&X509_free)> x509Main(rawX509Main, &X509_free);
     std::unique_ptr<X509, decltype(&X509_free)> x509Second(sk_X509_pop(x509Stack), &X509_free);
     
