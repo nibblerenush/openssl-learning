@@ -152,7 +152,7 @@ void GenerateRsaAndWritePem()
       throw std::runtime_error(GetSslErrorString());
     }
   }
-  catch(std::runtime_error ex)
+  catch (std::runtime_error ex)
   {
     std::cerr << ex.what() << std::endl;
   }
@@ -211,7 +211,7 @@ void ReadPemAndDecryptMessage()
     
     std::cout << "out: " << (char*)outText.get() << std::endl;
   }
-  catch(std::runtime_error ex)
+  catch (std::runtime_error ex)
   {
     std::cerr << ex.what() << std::endl;
   }
@@ -443,12 +443,12 @@ int main(int argc, char ** argv)
 {
   if (argc != 2)
   {
-    std::cerr << "Usage: openssl-learning [operation]" << std::endl;
+    std::cerr << "Usage: openssl-learning-crypto [operation]" << std::endl;
     return EXIT_FAILURE;
   }
   
   std::cout << GetSslInfo() << std::endl;
-  std::cout << "openssl_learning: start" << std::endl;
+  std::cout << argv[0] << ": start" << std::endl;
   OpenSSL_add_all_algorithms();
   ERR_load_crypto_strings();
   
@@ -490,6 +490,6 @@ int main(int argc, char ** argv)
   
   ERR_free_strings();
   EVP_cleanup();
-  std::cout << "openssl_learning: end" << std::endl;
+  std::cout << argv[0] << ": end" << std::endl;
   return EXIT_SUCCESS;
 }
