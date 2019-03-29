@@ -10,6 +10,8 @@
 #include <openssl/bio.h>
 #include <openssl/err.h>
 #include <openssl/ssl.h>
+#include <openssl/x509.h>
+#include <openssl/x509_vfy.h>
 
 std::string GetSslInfo()
 {
@@ -68,6 +70,34 @@ std::string GetX509CertInfo(X509 * x509Cert)
   return ostringstream.str();
 }
 
+int VerifyCallback(int preverifyOk, X509_STORE_CTX * x509StoreContext)
+{
+  std::cout << "=== " << __FUNCTION__ << ": start" << " ===" << std::endl;
+  std::cout << "preverifyOk: " << preverifyOk << std::endl;
+  
+  int error = X509_STORE_CTX_get_error(x509StoreContext);
+  std::cout << "error: " << X509_verify_cert_error_string(error) << std::endl;
+  
+  int depth = X509_STORE_CTX_get_error_depth(x509StoreContext);
+  std::cout << "depth: " << depth << std::endl;
+  
+  X509 * mainCert = X509_STORE_CTX_get_current_cert(x509StoreContext);
+  if (mainCert)
+  {
+    std::cout << "mainCert: \n" << GetX509CertInfo(mainCert) << std::endl;
+  }
+  
+  STACK_OF(X509) * x509Stack = X509_STORE_CTX_get1_chain(x509StoreContext);
+  while (X509 * certInChain = sk_X509_pop(x509Stack))
+  {
+    std::cout << "certInChain: \n" << GetX509CertInfo(certInChain) << std::endl;
+  }
+  
+  sk_X509_pop_free(x509Stack, X509_free);
+  std::cout << "=== " << __FUNCTION__ << ": end" << " ===" << std::endl;
+  return preverifyOk;
+}
+
 struct Host
 {
   std::string name;
@@ -105,7 +135,7 @@ int main(int argc, char ** argv)
       throw std::runtime_error(GetSslErrorString(__LINE__));
     }
     
-    SSL_CTX_set_verify(sslContext.get(), SSL_VERIFY_PEER, nullptr);
+    SSL_CTX_set_verify(sslContext.get(), SSL_VERIFY_PEER, VerifyCallback);
     
     if (!SSL_CTX_set_default_verify_paths(sslContext.get()))
     {
@@ -146,7 +176,7 @@ int main(int argc, char ** argv)
     {
       throw std::runtime_error(GetSslErrorString(__LINE__));
     }
-    std::cout << GetX509CertInfo(x509ServerCert.get()) << std::endl;
+    std::cout << "Server certificate: \n" << GetX509CertInfo(x509ServerCert.get()) << std::endl;
     
     if (SSL_get_verify_result(ssl) != X509_V_OK)
     {
@@ -192,137 +222,3 @@ int main(int argc, char ** argv)
   std::cout << '\n' << argv[0] << ": end" << std::endl;
   return EXIT_SUCCESS;
 }
-  
-//   long res = 1;
-//   
-// 
-// SSL_CTX* ctx = NULL;
-// BIO *web = NULL, *out = NULL;
-// SSL *ssl = NULL;
-// 
-//   (void)
-// 
-//   SSL_load_error_strings();
-//   ();
-//   ();
-// 
-// 
-// if(!(NULL != method)) handleFailure(__LINE__);
-// 
-// ctx = SSL_CTX_new(method);
-// if(!(ctx != NULL)) handleFailure(__LINE__);
-// 
-// /* Cannot fail ??? */
-// SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER, verify_callback);
-// 
-// /* Cannot fail ??? */
-// SSL_CTX_set_verify_depth(ctx, 4);
-// 
-// /* Cannot fail ??? */
-// //const long flags = SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3 | SSL_OP_NO_COMPRESSION;
-// //SSL_CTX_set_options(ctx, flags);
-// 
-// res = SSL_CTX_set_default_verify_paths(ctx);
-// if(!(1 == res)) handleFailure(__LINE__);
-// 
-// /*res = SSL_CTX_load_verify_locations(ctx, "random-org-chain.pem", NULL);
-// if(!(1 == res)) handleFailure(__LINE__);*/
-// 
-// web = BIO_new_ssl_connect(ctx);
-// if(!(web != NULL)) handleFailure(__LINE__);
-// 
-// res = BIO_set_conn_hostname(web, HOST_NAME ":" HOST_PORT);
-// if(!(1 == res)) handleFailure(__LINE__);
-// 
-// BIO_get_ssl(web, &ssl);
-// if(!(ssl != NULL)) handleFailure(__LINE__);
-// 
-// /*const char* const PREFERRED_CIPHERS = "HIGH:!aNULL:!kRSA:!PSK:!SRP:!MD5:!RC4";
-// res = SSL_set_cipher_list(ssl, PREFERRED_CIPHERS);
-// if(!(1 == res)) handleFailure(__LINE__);*/
-// 
-// res = SSL_set_tlsext_host_name(ssl, HOST_NAME);
-// if(!(1 == res)) handleFailure(__LINE__);
-// 
-// out = BIO_new_fp(stdout, BIO_NOCLOSE);
-// if(!(NULL != out)) handleFailure(__LINE__);
-// 
-// res = BIO_do_connect(web);
-// if(!(1 == res)) handleFailure(__LINE__);
-// 
-// /*res = SSL_connect(ssl);
-// if(!(1 == res)) handleFailure(__LINE__);*/
-// res = BIO_do_handshake(web);
-// if(!(1 == res)) handleFailure(__LINE__);
-// 
-// /* Step 1: verify a server certificate was presented during the negotiation */
-// X509* cert = SSL_get_peer_certificate(ssl);
-// if(cert) { X509_free(cert); } /* Free immediately */
-// if(NULL == cert) handleFailure(__LINE__);
-// 
-// /* Step 2: verify the result of chain verification */
-// /* Verification performed according to RFC 4158    */
-// res = SSL_get_verify_result(ssl);
-// if(!(X509_V_OK == res)) handleFailure(__LINE__);
-// 
-// /* Step 3: hostname verification */
-// /* An exercise left to the reader */
-// 
-// /*BIO_puts(web, "GET " HOST_RESOURCE " HTTP/1.1\r\n"
-//               "Host: " HOST_NAME "\r\n"
-//               "Connection: close\r\n\r\n");*/
-// 
-// BIO_puts(web, "GET " HOST_RESOURCE " HTTP/1.1\r\n"
-//               "Host: " HOST_NAME "\r\n"
-//               "Connection: close\r\n\r\n");
-// 
-// BIO_puts(out, "\n");
-// 
-// int len = 0;
-// do
-// {
-//   char buff[1536] = {};
-//   len = BIO_read(web, buff, sizeof(buff));
-//             
-//   if(len > 0)
-//     BIO_write(out, buff, len);
-// 
-// } while (len > 0 || BIO_should_retry(web));
-// 
-// if(out)
-//   BIO_free(out);
-// 
-// if(web != NULL)
-//   BIO_free_all(web);
-// 
-// if(NULL != ctx)
-//   SSL_CTX_free(ctx);
-// return 0;
-// }
-// 
-// 
-// 
-// void handleFailure(int g)
-// {
-//   std::cerr << "fail :" << g << '\n';
-// }
-// 
-// int verify_callback(int preverify, X509_STORE_CTX* x509_ctx)
-// {
-//     int depth = X509_STORE_CTX_get_error_depth(x509_ctx);
-//     int err = X509_STORE_CTX_get_error(x509_ctx);
-//     
-//     X509* cert = X509_STORE_CTX_get_current_cert(x509_ctx);
-//     X509_NAME* iname = cert ? X509_get_issuer_name(cert) : NULL;
-//     X509_NAME* sname = cert ? X509_get_subject_name(cert) : NULL;
-//     
-//     std::cout << "Issuer (cn)" << iname;
-//     std::cout << "Subject (cn)" << sname;
-//     
-//     if(depth == 0) {
-//         /* If depth is 0, its the server's certificate. Print the SANs too */
-//         std::cout << "Subject (san)" << cert;
-//     }
-// 
-//     return preverify;
-// }
